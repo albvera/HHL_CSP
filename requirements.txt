@@ -1,0 +1,7 @@
+matplotlib==1.5.3
+networkx==1.11
+numpy==1.11.3
+matplotlib==1.5.3
+scipy==0.18.1
+progressbar2==3.12.0
+scikit_learn==0.18.1
