@@ -1,0 +1,8 @@
+*.pyc
+SF_results
+LU_results
+Data
+*.xlsx
+run_*
+.ipynb*
+*.~*
