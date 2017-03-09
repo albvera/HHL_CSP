@@ -103,7 +103,7 @@ def contract_augmented(G,C,B):
 				continue
 			G.node[v]['rank'] = rank
 			rank += 1
-			shortcut(H,v,G)
+			shortcut_augmented(H,v,G)
 
 """
 Shortcuts node v from graph H
@@ -134,6 +134,35 @@ def shortcut(H,v,G):
 			H.add_edge(u,w,dist=G[u][v]['dist']+G[v][w]['dist'])
 			G.add_edge(u,w,shortcut=1,dist=G[u][v]['dist']+G[v][w]['dist'])
 
+def shortcut_augmented(H,v,G):
+	sucs = H.successors(v)					# successors of v
+	if not sucs:							# v has no successors
+		H.remove_node(v)
+		return
+	pred = H.predecessors(v)				# predecessors of v
+	if not pred:							# v has no predecessors
+		H.remove_node(v)
+		return
+			
+	#Look in H for cutoff
+	max_vw = 0								# max dist(v,w)
+	for w in H[v]:							# search in successors of v
+		if H[v][w]['dist'] > max_vw:
+			max_vw = H[v][w]['dist']
+	H.remove_node(v)
+	for u in pred:
+		Lengths,_ = dijkstra(H,u,target=None,cutoff=G[u][v]['dist']+max_vw, weight='dist')
+		for w in sucs:
+			if u == w:				
+				continue
+			add_edge = True
+			for b in xrange(w[1],u[1]+1):	# check if there is a path to (w[0],b) with better length
+				if (w[0],b) in Lengths and Lengths[(w[0],b)]<=G[u][v]['dist']+G[v][w]['dist']:
+					add_edge = False
+					break
+			if add_edge:
+				H.add_edge(u,w,dist=G[u][v]['dist']+G[v][w]['dist'])
+				G.add_edge(u,w,shortcut=1,dist=G[u][v]['dist']+G[v][w]['dist'])
 
 """
 Runs a CH search, visiting all nodes with higher rank

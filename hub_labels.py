@@ -185,6 +185,7 @@ def hl_query(If,Df,Ib,Db):
 
 """
 Receives hubs for pruned augmented graph, source, target and budget
+Returns dist(s,t|b) and the efficient budget y<=b		
 """
 def hl_query_pruned(I,D,s,t,b):
 	if s == t:
@@ -198,7 +199,7 @@ def hl_query_pruned(I,D,s,t,b):
 		d = hl_query(I[0][(s,x)],D[0][(s,x)],I[1][(t,0)],D[1][(t,0)])
 		if d<dist:
 			dist = d
-	return dist	
+	return dist	#TODO: return also the efficient budget and use it to prune
 
 """
 Receives hubs for pruned augmented graph, source and target
@@ -246,3 +247,42 @@ def read_labels(name):
 	with open(name, "rb") as f:
 		dic = pickle.load(f)
 	return dic['IDs'], dic['Dist'], dic['Size'], dic['Map']
+
+"""
+Receives hub labels, augmented graph and runs n_queries to measure times
+technique can be "frontier", "full_prune" or "partial_prune"
+Returns a list with the results
+"""
+from random import choice
+def run_tests(n_queries,B,technique,I,D,GB,G,omit_dijkstra=False,omit_hl=False):
+	test_nodes = []												# random (s,t,b) 
+	dij_dist = []	
+	hl_dist = []	
+	times = []
+	for k in xrange(0,n_queries):		
+		test_nodes.append((choice(G.nodes()),choice(G.nodes()),choice(range(0,B+1))))
+
+	query_hl = hl_query_extra_edges
+	query_dijkstra = dijkstra_sink
+	if technique == "frontier":
+		test_nodes = [(s,t,B) for (s,t,b) in test_nodes]	
+		query_hl = hl_query_frontier
+		query_dijkstra = dijkstra_frontier
+
+	if not omit_dijkstra:
+		init_time = time.time()
+		for k in xrange(0,n_queries):
+			dij_dist.append(query_dijkstra(GB,test_nodes[k][0],test_nodes[k][1],test_nodes[k][2]))
+		times.append((time.time() - init_time)*1000/n_queries)
+
+	if not omit_hl:	
+		init_time = time.time()
+		for k in xrange(0,n_queries):		
+			hl_dist.append(query_hl(I,D,test_nodes[k][0],test_nodes[k][1],test_nodes[k][2]))
+		times.append((time.time() - init_time)*1000/n_queries)
+	
+	if not (omit_dijkstra or omit_hl):
+		for k in xrange(0,n_queries):
+			if dij_dist[k] != hl_dist[k]:
+				print 'Error {}: (s,t)={} -- HL:{} -- Dij:{}'.format(k,test_nodes[k],hl_dist[k],dij_dist[k])
+	return times
