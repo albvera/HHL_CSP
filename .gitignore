@@ -6,3 +6,4 @@ Data
 run_*
 .ipynb*
 *.~*
+out.txt

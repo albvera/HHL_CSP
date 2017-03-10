@@ -52,7 +52,7 @@ Id_map[Id] returns the node with that ID
 import operator
 def prune_labels_bootstrap(I,D,N,Id_map,G,omit_forward=False,extra_edges=True):		
 	if extra_edges:	
-		query = hl_query_extra_edges 
+		query = hl_query_extra_surplus 
 	else:	
 		query = hl_query_pruned
 	keys = {}
@@ -69,14 +69,14 @@ def prune_labels_bootstrap(I,D,N,Id_map,G,omit_forward=False,extra_edges=True):
 		bar = progressbar.ProgressBar()
 		for v in bar(keys[reverse]):							# prune the hub of node v
 			j = 0
-			while j<N[reverse][v]:
-				dist = 0
+			while j<N[reverse][v]:								
+				dist = surplus = 0
 				w = Id_map[I[reverse][v][j]]					# j-th node in the hub
 				if reverse == 0 and v!=w:						# if (w,x) not a sink-node, compute SP (v,b-x)->(w,0)
-					dist = query(I,D,v[0],w[0],v[1]-w[1])
+					dist,surplus = query(I,D,v[0],w[0],v[1]-w[1])		
 				if reverse == 1 and v!=w:						# dist wv and (v,b) is a sink node
-					dist = query(I,D,w[0],v[0],w[1])
-				if dist<D[reverse][v][j]:
+					dist,surplus = query(I,D,w[0],v[0],w[1])
+				if dist<D[reverse][v][j] or surplus>0:
 					del I[reverse][v][j]
 					del D[reverse][v][j]
 					N[reverse][v]-=1
@@ -84,52 +84,6 @@ def prune_labels_bootstrap(I,D,N,Id_map,G,omit_forward=False,extra_edges=True):
 					j+=1
 		gc.collect()	
 
-"""
-G is the augmented graph without sink nodes
-"""
-def prune_forward_labels(I,D,N,Id_map,G,nodes,B):		
-	print 'Pruning forward hubs'
-	bar = progressbar.ProgressBar()
-	dijkstra = nx.single_source_dijkstra
-	
-	for s in bar(nodes):
-		lengths,paths=dijkstra(G,(s,B),weight='dist')	
-		visit = {}												# visit[b] = nodes visited from (s,b) in an efficient path
-		dist = {}												# dist[t][b] = dist(s,t|b)
-		for b in xrange(0,B+1):
-			visit[b] = Set()		
-		
-		#Compute all efficient paths from s
-		for t in nodes:
-			if t==s:
-				continue
-			dist[t] = [float("inf")]*(B+1)						# dist[b] = distance with budget b
-			for x in xrange(B,-1,-1):
-				if (t,x) not in lengths:
-					if x<B:
-						dist[t][B-x] = dist[t][B-x-1]
-					continue		
-				if x==B or lengths[(t,x)]<dist[t][B-x-1]:		# path is strictly better than the previous
-					visit[B-x].update([(u,y-x) for (u,y) in paths[(t,x)]])
-					dist[t][B-x] = lengths[(t,x)]
-				else:
-					dist[t][B-x] = dist[t][B-x-1]
-
-		#Remove nodes not visited in an efficient path	
-		for b in xrange(B,-1,-1):
-			for x in xrange (b-1,-1,-1):						# add all the nodes visited with smaller budget
-				visit[b].update(visit[x])		
-			j = 0
-			v = (s,b)
-			while j<N[0][v]:
-				(w,z) = Id_map[I[0][v][j]]						# j-th node in the hub
-				if s==w or ((w,z) in visit[b] and D[0][v][j]<=dist[w][b-z]):
-					j+=1
-				else:
-					del I[0][v][j]
-					del D[0][v][j]
-					N[0][v]-=1
-	gc.collect()				
 """
 Prune labels of not augmented graph
 """
@@ -185,21 +139,23 @@ def hl_query(If,Df,Ib,Db):
 
 """
 Receives hubs for pruned augmented graph, source, target and budget
-Returns dist(s,t|b) and the efficient budget y<=b		
+Returns dist(s,t|b) and the surplus of budget 		
 """
 def hl_query_pruned(I,D,s,t,b):
 	if s == t:
-		return 0
+		return 0,0
 	if (t,0) not in I[1]:
 		return float("inf")
 	dist = float("inf")
+	surplus = 0
 	for x in range(b,-1,-1):
 		if (s,x) not in I[0]:
 			continue
 		d = hl_query(I[0][(s,x)],D[0][(s,x)],I[1][(t,0)],D[1][(t,0)])
 		if d<dist:
 			dist = d
-	return dist	#TODO: return also the efficient budget and use it to prune
+			surplus = b-x
+	return dist,surplus
 
 """
 Receives hubs for pruned augmented graph, source and target
@@ -227,10 +183,18 @@ def hl_query_frontier(I,D,s,t,B):
 """
 Receives hubs for pruned augmented graph with extra edges (v,b)->(v,b-1), source, target and budget
 """
-def hl_query_extra_edges(I,D,s,t,b):
+def hl_query_extra_edges(I,D,s,t,b):	
 	if s == t:
 		return 0
 	return hl_query(I[0][(s,b)],D[0][(s,b)],I[1][(t,0)],D[1][(t,0)])
+
+"""
+Receives hubs for pruned augmented graph with extra edges (v,b)->(v,b-1), source, target and budget
+"""
+def hl_query_extra_surplus(I,D,s,t,b):	#TODO:implement surplus of budget
+	if s == t:
+		return 0,0
+	return hl_query(I[0][(s,b)],D[0][(s,b)],I[1][(t,0)],D[1][(t,0)]),0
 
 """
 Save labels already constructed
@@ -248,6 +212,11 @@ def read_labels(name):
 		dic = pickle.load(f)
 	return dic['IDs'], dic['Dist'], dic['Size'], dic['Map']
 
+from numpy import std
+from numpy import average as avg
+def stats(N):
+	return [max(N.values()),int(avg(N.values())),int(std(N.values()))]
+	
 """
 Receives hub labels, augmented graph and runs n_queries to measure times
 technique can be "frontier", "full_prune" or "partial_prune"
@@ -277,7 +246,7 @@ def run_tests(n_queries,B,technique,I,D,GB,G,omit_dijkstra=False,omit_hl=False):
 
 	if not omit_hl:	
 		init_time = time.time()
-		for k in xrange(0,n_queries):		
+		for k in xrange(0,n_queries):
 			hl_dist.append(query_hl(I,D,test_nodes[k][0],test_nodes[k][1],test_nodes[k][2]))
 		times.append((time.time() - init_time)*1000/n_queries)
 	
